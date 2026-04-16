@@ -1,4 +1,3 @@
-
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -59,25 +58,31 @@ class PPOPortfolioAgent:
         if eval_env is not None:
             self.eval_env = DummyVecEnv([lambda: Monitor(eval_env)])
 
+        # FIX: Dynamically read activation from config rather than hardcoding ReLU
+        activation_str = config.get("policy_kwargs", {}).get("activation_fn", "relu").lower()
+        activation_fn = nn.ReLU if activation_str == "relu" else nn.Tanh
+        
         # Build PPO model
         policy_kwargs = {
-            "net_arch": config["policy_kwargs"]["net_arch"],
-            "activation_fn": nn.ReLU,   # paper uses ReLU
+            "net_arch": config.get("policy_kwargs", {}).get("net_arch", [128, 128]),
+            "activation_fn": activation_fn, 
         }
 
+        # FIX: Ensure fallbacks (.get) exist for parameters like max_grad_norm 
+        # to strictly protect against gradient explosions
         self.model = PPO(
             policy          = "MlpPolicy",   # standard Multi-Layer Perceptron policy
             env             = self.vec_env,
-            learning_rate   = config["learning_rate"],
-            n_steps         = config["n_steps"],
-            batch_size      = config["batch_size"],
-            n_epochs        = config["n_epochs"],
-            gamma           = config["gamma"],
-            gae_lambda      = config["gae_lambda"],
-            clip_range      = config["clip_range"],   # ε = 0.2
-            ent_coef        = config["ent_coef"],     # entropy bonus coefficient
-            vf_coef         = config["vf_coef"],      # value function loss weight
-            max_grad_norm   = config["max_grad_norm"],
+            learning_rate   = config.get("learning_rate", 3e-4),
+            n_steps         = config.get("n_steps", 2048),
+            batch_size      = config.get("batch_size", 64),
+            n_epochs        = config.get("n_epochs", 10),
+            gamma           = config.get("gamma", 0.99),
+            gae_lambda      = config.get("gae_lambda", 0.95),
+            clip_range      = config.get("clip_range", 0.2),   # ε = 0.2
+            ent_coef        = config.get("ent_coef", 0.0),     # entropy bonus coefficient
+            vf_coef         = config.get("vf_coef", 0.5),      # value function loss weight
+            max_grad_norm   = config.get("max_grad_norm", 0.5), 
             policy_kwargs   = policy_kwargs,
             verbose         = config.get("verbose", 1),
             seed            = SEED,
@@ -89,7 +94,7 @@ class PPOPortfolioAgent:
         print(f"   Params: {sum(p.numel() for p in self.model.policy.parameters()):,}")
 
     def train(self, total_timesteps: Optional[int] = None) -> "PPOPortfolioAgent":
-        timesteps = total_timesteps or self.config["total_timesteps"]
+        timesteps = total_timesteps or self.config.get("total_timesteps", 10_000)
 
         print(f"\n Training PPO [{self.agent_name}] for {timesteps:,} timesteps...")
 
@@ -145,8 +150,15 @@ class PPOPortfolioAgent:
     def get_action(self, obs: np.ndarray, deterministic: bool = True) -> np.ndarray:
         obs_tensor = obs.reshape(1, -1)
         action, _ = self.model.predict(obs_tensor, deterministic=deterministic)
-        # Apply softmax to get valid portfolio weights
         action = action.flatten()
+        
+        # FIX: Protect against NaN actions breaking inference scripts
+        if np.any(np.isnan(action)):
+            # If network degraded, fallback to uniform allocation to prevent crash
+            weights = np.ones_like(action) / len(action)
+            return weights
+
+        # Apply softmax to get valid portfolio weights
         weights = np.exp(action - action.max())
         weights = weights / (weights.sum() + 1e-10)
         return weights

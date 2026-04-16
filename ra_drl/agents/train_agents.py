@@ -1,4 +1,3 @@
-
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -72,17 +71,27 @@ def run_hyperopt(
             obs, _ = env.reset()
             done = False
             total_r = 0.0
+            
             while not done:
-                action, _ = agent.model.predict(obs, deterministic=True)
-                obs, r, terminated, truncated, _ = env.step(action)
+                # FIX: Use agent.get_action() instead of raw model.predict()
+                # This ensures actions are soft-maxed into valid weights before stepping the env
+                weights = agent.get_action(obs, deterministic=True)
+                obs, r, terminated, truncated, _ = env.step(weights)
                 done = terminated or truncated
                 total_r += r
+
+            # Catch NaN rewards caused by unstable policies
+            if np.isnan(total_r):
+                return {"loss": 1e6, "status": STATUS_OK}
 
             # Return negative (hyperopt minimizes)
             return {"loss": -total_r, "status": STATUS_OK}
 
         except Exception as e:
-            print(f"  Trial failed: {e}")
+            # FIX: Suppress the massive PyTorch traceback and return high loss. 
+            # This teaches the optimizer to avoid these aggressive hyperparameter combinations.
+            err_msg = str(e).splitlines()[0] if str(e) else "Unknown error"
+            print(f"  Trial failed (unstable hyperparams): {err_msg}")
             return {"loss": 1e6, "status": STATUS_OK}
 
     trials = Trials()
@@ -261,7 +270,7 @@ def generate_agent_actions(
     )
 
     print(f"\n Stacked actions saved: {stacked.shape} (T, 3=agents, N=assets)")
-    print(f"     Shape for fusion module: {stacked.shape}")
+    print(f"    Shape for fusion module: {stacked.shape}")
 
     return actions_dict, stacked, common_dates
 
