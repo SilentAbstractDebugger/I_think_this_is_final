@@ -280,11 +280,13 @@ class DynamicGate(nn.Module):
             final_weights: (B, N)  — blended portfolio
             alpha:         (B, 1)  — per-sample gate value (for diagnostics)
         """
+        
         alpha      = torch.sigmoid(self.alpha_net(market_state))        # (B, 1)
         agent_sel  = self.agent_selector(market_state)                   # (B, 3)
         agent_blend = (agent_actions * agent_sel.unsqueeze(-1)).sum(dim=1)  # (B, N)
 
-        final = alpha * transformer_weights + (1.0 - alpha) * agent_blend
+        # final = alpha * transformer_weights + (1.0 - alpha) * agent_blend
+        final = transformer_weights
         final = final / (final.sum(dim=-1, keepdim=True) + 1e-8)
 
         return final, alpha
