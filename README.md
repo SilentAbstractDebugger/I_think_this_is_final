@@ -149,14 +149,6 @@ This approach aims to bridge the gap between theoretical portfolio optimization 
 | Volatility | Risk level |
 
 ---
-   
-##  Training Details
-
-- **Transaction Cost:** 0.05% per trade  
-- **Train/Test Split:** Time-based split to preserve temporal dependencies  
-- **Hyperparameter Optimization:** Bayesian Optimization using Hyperopt
-  
----
 
 ## Expected Outcomes
 
