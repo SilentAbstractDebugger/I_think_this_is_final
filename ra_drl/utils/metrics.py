@@ -1,33 +1,10 @@
-"""
-utils/metrics.py
-─────────────────
-All performance metrics from the paper. Computes:
-
-  1. Cumulative Return (CR)
-  2. Annual Return (AR)
-  3. Sharpe Ratio (SR)
-  4. Calmar Ratio (CAR)
-  5. Sortino Ratio (SOR)
-  6. Omega Ratio (OR)
-  7. Annual Volatility (AV)
-  8. Stability (R² of linear fit to cumulative log returns)
-
-Plus: Maximum Drawdown, Paired t-test for statistical significance.
-
-ALL MATH EXPLAINED INLINE.
-"""
-
 import numpy as np
 import pandas as pd
 from scipy import stats
 from typing import Union, Optional
 from config import RISK_FREE_RATE, OMEGA_THRESHOLD
 
-
-# ─────────────────────────────────────────────────────────
 # INDIVIDUAL METRICS
-# ─────────────────────────────────────────────────────────
-
 def cumulative_return(portfolio_values: np.ndarray) -> float:
     """
     CR = (Final Value / Initial Value) - 1
@@ -59,24 +36,14 @@ def annual_volatility(
     daily_returns: np.ndarray,
     trading_days_per_year: int = 252
 ) -> float:
-    """
-    AV = std(daily_returns) × √252
-
-    The annualized standard deviation of daily returns.
-    Higher = more risk.
-    """
+    # AV = std(daily_returns) × √252
     if len(daily_returns) < 2:
         return 0.0
     return float(np.std(daily_returns, ddof=1)) * np.sqrt(trading_days_per_year)
 
 
 def maximum_drawdown(portfolio_values: np.ndarray) -> float:
-    """
-    MDD = max over all t of [(Peak_up_to_t - Value_at_t) / Peak_up_to_t]
-
-    Measures the worst peak-to-trough decline.
-    0 = no drawdown ever, 1 = lost everything.
-    """
+    # MDD = max over all t of [(Peak_up_to_t - Value_at_t) / Peak_up_to_t]
     if len(portfolio_values) < 2:
         return 0.0
     cummax = np.maximum.accumulate(portfolio_values)
@@ -170,17 +137,6 @@ def omega_ratio(
     daily_returns:  np.ndarray,
     threshold:      float = OMEGA_THRESHOLD,
 ) -> float:
-    """
-    OR = Σ(r - θ)+ / Σ(θ - r)+
-       = Expected gains above threshold / Expected losses below threshold
-
-    θ = minimum acceptable return (typically 0 or risk-free rate)
-
-    OR > 1 = gains exceed losses at the threshold (good)
-    OR < 1 = losses exceed gains (bad)
-
-    Omega captures ALL moments of the return distribution (not just mean/variance).
-    """
     if len(daily_returns) < 2:
         return 0.0
 
@@ -196,11 +152,7 @@ def omega_ratio(
 def stability(portfolio_values: np.ndarray) -> float:
     """
     Stability = R² of linear regression fit to cumulative log returns.
-
     A perfectly linear (monotonically growing) portfolio has R² = 1.
-    High volatility / zigzagging gives lower R².
-
-    Interpretation: How steadily/consistently does the portfolio grow?
     """
     if len(portfolio_values) < 3:
         return 0.0
@@ -214,28 +166,13 @@ def stability(portfolio_values: np.ndarray) -> float:
     return float(r_value ** 2)
 
 
-# ─────────────────────────────────────────────────────────
-# COMPUTE ALL METRICS AT ONCE
-# ─────────────────────────────────────────────────────────
-
 def compute_all_metrics(
     portfolio_values: Union[np.ndarray, pd.Series],
     strategy_name:   str   = "Strategy",
     risk_free_rate:  float = RISK_FREE_RATE,
     trading_days_per_year: int = 252,
 ) -> dict:
-    """
-    Compute all 8 paper metrics from a portfolio value series.
-
-    Args:
-        portfolio_values: time series of portfolio values (starts at initial capital)
-        strategy_name:    label for display purposes
-        risk_free_rate:   annual risk-free rate
-        trading_days_per_year: 252 for daily trading
-
-    Returns:
-        dict with all metrics
-    """
+    
     if isinstance(portfolio_values, pd.Series):
         portfolio_values = portfolio_values.values
 
@@ -264,15 +201,6 @@ def compare_strategies(
     strategies: dict,   # {strategy_name: portfolio_value_array_or_series}
     risk_free_rate: float = RISK_FREE_RATE,
 ) -> pd.DataFrame:
-    """
-    Compute and compare metrics for multiple strategies.
-
-    Args:
-        strategies: {name: portfolio_values_array}
-
-    Returns:
-        DataFrame with one row per strategy, one column per metric
-    """
     rows = []
     for name, values in strategies.items():
         metrics = compute_all_metrics(values, strategy_name=name, risk_free_rate=risk_free_rate)
@@ -281,11 +209,6 @@ def compare_strategies(
     df = pd.DataFrame(rows).set_index("Strategy")
     return df
 
-
-# ─────────────────────────────────────────────────────────
-# STATISTICAL SIGNIFICANCE TEST
-# ─────────────────────────────────────────────────────────
-
 def paired_t_test(
     returns_a: np.ndarray,
     returns_b: np.ndarray,
@@ -293,20 +216,7 @@ def paired_t_test(
     strategy_b: str = "Baseline",
     alpha: float = 0.05,
 ) -> dict:
-    """
-    Paired t-test to verify if strategy A's improvement over B is statistically significant.
-
-    H₀: mean(returns_A - returns_B) = 0  (no significant difference)
-    H₁: mean(returns_A - returns_B) ≠ 0  (significant difference)
-
-    Args:
-        returns_a: daily returns of strategy A
-        returns_b: daily returns of strategy B
-        alpha:     significance level (0.05 = 95% confidence)
-
-    Returns:
-        dict with t-statistic, p-value, conclusion
-    """
+   
     # Align lengths
     min_len = min(len(returns_a), len(returns_b))
     a = returns_a[:min_len]
@@ -321,25 +231,20 @@ def paired_t_test(
         "reject_H0":      p_value < alpha,
         "significant":    p_value < alpha,
         "conclusion": (
-            f"✅ {strategy_a} is significantly different from {strategy_b} "
+            f" {strategy_a} is significantly different from {strategy_b} "
             f"(p={p_value:.4f} < α={alpha})"
             if p_value < alpha else
-            f"❌ No significant difference between {strategy_a} and {strategy_b} "
+            f" No significant difference between {strategy_a} and {strategy_b} "
             f"(p={p_value:.4f} ≥ α={alpha})"
         )
     }
 
-    print(f"\n📊 Paired t-test: {strategy_a} vs {strategy_b}")
+    print(f"\n Paired t-test: {strategy_a} vs {strategy_b}")
     print(f"   t-statistic: {result['t_statistic']}")
     print(f"   p-value:     {result['p_value']}")
     print(f"   {result['conclusion']}")
 
     return result
-
-
-# ─────────────────────────────────────────────────────────
-# UNIT TESTS
-# ─────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import sys
@@ -365,7 +270,7 @@ if __name__ == "__main__":
     }
 
     df = compare_strategies(strategies)
-    print("\n📊 Strategy Comparison:")
+    print("\n Strategy Comparison:")
     print(df.to_string())
 
     # Statistical test
