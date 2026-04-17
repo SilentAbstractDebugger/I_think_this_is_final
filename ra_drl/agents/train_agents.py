@@ -73,7 +73,6 @@ def run_hyperopt(
             total_r = 0.0
             
             while not done:
-                # FIX: Use agent.get_action() instead of raw model.predict()
                 # This ensures actions are soft-maxed into valid weights before stepping the env
                 weights = agent.get_action(obs, deterministic=True)
                 obs, r, terminated, truncated, _ = env.step(weights)
@@ -88,7 +87,6 @@ def run_hyperopt(
             return {"loss": -total_r, "status": STATUS_OK}
 
         except Exception as e:
-            # FIX: Suppress the massive PyTorch traceback and return high loss. 
             # This teaches the optimizer to avoid these aggressive hyperparameter combinations.
             err_msg = str(e).splitlines()[0] if str(e) else "Unknown error"
             print(f"  Trial failed (unstable hyperparams): {err_msg}")
