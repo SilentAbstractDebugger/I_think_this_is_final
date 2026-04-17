@@ -1,44 +1,3 @@
-
-"""
-Computes the STATE SPACE for the RL environment as described in the paper:
-  - 8 Technical Indicators per asset:
-      1. SMA-30  (Simple Moving Average, 30 days)
-      2. SMA-60  (Simple Moving Average, 60 days)
-      3. MACD    (Moving Average Convergence Divergence)
-      4. RSI-14  (Relative Strength Index)
-      5. CCI     (Commodity Channel Index)
-      6. ADX     (Average Directional Index)
-      7. BB_upper (Bollinger Band Upper)
-      8. BB_lower (Bollinger Band Lower)
-  - Covariance Matrix of closing prices (rolling window)
-
-Maths :
-
-SMA(n) = mean of last n closing prices
-
-MACD = EMA(12) - EMA(26)
-  EMA(n) = Close * (2/(n+1)) + EMA_prev * (1 - 2/(n+1))
-
-RSI:
-  RS = Avg_Gain / Avg_Loss over 14 days
-  RSI = 100 - (100 / (1 + RS))
-
-CCI = (Typical Price - SMA(20)) / (0.015 × Mean Absolute Deviation)
-  Typical Price = (High + Low + Close) / 3
-
-ADX = smoothed directional movement index (measures trend strength)
-
-Bollinger Bands:
-  Middle = SMA(20)
-  Upper  = Middle + 2 × std(20)
-  Lower  = Middle - 2 × std(20)
-
-Covariance Matrix:
-  60-day rolling covariance between all asset pairs (n × n matrix)
-  Used to capture cross-asset risk relationships
-
-"""
-
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -193,12 +152,7 @@ def compute_rolling_covariance(close_matrix: pd.DataFrame,
 
 def normalize_features(features_df: pd.DataFrame,
                         train_end: str = TRAIN_END) -> pd.DataFrame:
-    """
-    Z-score normalization using ONLY training data statistics.
-    This prevents lookahead bias.
-
-    Train stats → applied to both train and test.
-    """
+  
     train_mask = features_df.index <= train_end
     mean = features_df[train_mask].mean()
     std  = features_df[train_mask].std().replace(0, 1)  # avoid division by zero
@@ -209,18 +163,7 @@ def normalize_features(features_df: pd.DataFrame,
 # Main feature builder
 
 class FeatureBuilder:
-    """
-    Builds the complete state space for the RL environment.
-
-    State at time t = {
-        covariance_matrix: shape (N, N),
-        technical_indicators: shape (N, 8)
-    }
-
-    Flattened state dimension: N*N + N*8
-    For N=29 (Dow): 29*29 + 29*8 = 841 + 232 = 1073 features
-    """
-
+   
     def __init__(self):
         self.close   = None
         self.high    = None
@@ -232,7 +175,7 @@ class FeatureBuilder:
 
     def load_data(self):
         """Load raw price data."""
-        print("📂 Loading raw price data...")
+        print(" Loading raw price data...")
         self.close = pd.read_csv(
             os.path.join(DATA_DIR, "close_prices.csv"), index_col=0, parse_dates=True
         )
@@ -270,7 +213,7 @@ class FeatureBuilder:
 
         This flat representation is what the RL environment uses.
         """
-        print("\n🏗️  Building flat state DataFrame...")
+        print("\n Building flat state DataFrame...")
 
         # Align all indicators to same dates
         all_dates = list(self.cov_matrices.keys())
@@ -354,16 +297,7 @@ class FeatureBuilder:
 
 
 def load_features():
-    """
-    Utility to load pre-computed features.
-    Used by the RL environment and training scripts.
-
-    Returns:
-        state_df:    (T × features) DataFrame
-        close_df:    (T × N) closing prices aligned to state dates
-        cov_array:   (T, N, N) covariance matrices
-        tickers:     list of N ticker symbols
-    """
+    
     state_df  = pd.read_csv(
         os.path.join(FEAT_DIR, "states.csv"), index_col=0, parse_dates=True
     )
