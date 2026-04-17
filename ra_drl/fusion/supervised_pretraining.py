@@ -1,44 +1,3 @@
-"""
-fusion/supervised_pretraining.py  (Fixed Version)
-───────────────────────────────────────────────────
-Supervised pre-training of the Transformer fusion module.
-
-WHAT WAS WRONG WITH THE ORIGINAL TRAINING:
-───────────────────────────────────────────
-Original loss:  MSE(predicted_weights, gt_weights)  only
-
-The MSE loss teaches the model to MATCH ground-truth weights, but it gives
-ZERO gradient signal to the dynamic gate (alpha_net) because:
-  - Any fixed alpha value produces the same MSE if the transformer and
-    agent blend are individually close to GT.
-  - The gate has no incentive to vary — it sits at its initialisation.
-
-THE FIX — Three-component loss:
-────────────────────────────────
-  L = λ_mse  × MSE(pred, gt)                   ← original: match GT weights
-    + λ_sharp × SharpeApprox(pred, next_returns) ← NEW: reward good risk/return
-    + λ_gate  × GateEntropyReg(alpha)           ← NEW: force gate to vary
-
-1. MSE loss (unchanged): aligns predicted weights with oracle GT.
-
-2. Sharpe Approximation loss (new):
-   We compute approximate 1-step portfolio returns using NEXT day's
-   percentage changes and penalise low Sharpe in a differentiable way:
-     approx_return = (pred_weights * next_day_returns).sum(dim=-1)
-     L_sharpe = -(mean(r) / (std(r) + eps))          ← maximise Sharpe
-   This gives a direct gradient signal to the gate: if blending more
-   with a particular agent produces better Sharpe, alpha adjusts.
-
-3. Gate Entropy Regulariser (new):
-   We want alpha to VARY across samples, not collapse to a constant.
-   We maximise the entropy of the alpha distribution in each mini-batch:
-     L_gate = -H(alpha)   where H = -mean( α log α + (1-α) log(1-α) )
-   This explicitly punishes alpha converging to a single value.
-
-IMPORTANT: Sharpe loss requires next-day returns, so the dataset now
-includes an aligned next_returns tensor alongside stacked_actions.
-"""
-
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -57,9 +16,7 @@ from config import (
 )
 
 
-# ─────────────────────────────────────────────────────────
-# GROUND TRUTH WEIGHT COMPUTATION  (unchanged)
-# ─────────────────────────────────────────────────────────
+# Ground truth weight computation
 
 def compute_ground_truth_weights(
     close_df: pd.DataFrame,
@@ -82,9 +39,7 @@ def compute_ground_truth_weights(
     return gt_weights
 
 
-# ─────────────────────────────────────────────────────────
-# PYTORCH DATASET  (extended: now includes next-day returns)
-# ─────────────────────────────────────────────────────────
+# Pytorch Dataset
 
 class FusionDataset(Dataset):
     """
@@ -93,7 +48,7 @@ class FusionDataset(Dataset):
     Each sample:
         X:            stacked agent actions  → (3, N)
         y:            ground-truth weights   → (N,)
-        next_returns: next-day pct changes   → (N,)  ← NEW for Sharpe loss
+        next_returns: next-day pct changes   → (N,)
     """
 
     def __init__(
@@ -116,22 +71,14 @@ class FusionDataset(Dataset):
         return self.X[idx], self.y[idx], self.r[idx]
 
 
-# ─────────────────────────────────────────────────────────
-# LOSS FUNCTIONS
-# ─────────────────────────────────────────────────────────
+# Loss functions
 
 def sharpe_approx_loss(
     pred_weights: torch.Tensor,   # (B, N)
     next_returns: torch.Tensor,   # (B, N)
     eps: float = 1e-6,
 ) -> torch.Tensor:
-    """
-    Differentiable approximation to negative Sharpe ratio.
-    Minimising this = maximising Sharpe.
-
-    portfolio_return[b] = sum_i( pred_weights[b,i] * next_returns[b,i] )
-    L = -(mean(r) / (std(r) + eps))
-    """
+    
     port_returns = (pred_weights * next_returns).sum(dim=-1)   # (B,)
     mean_r = port_returns.mean()
     std_r  = port_returns.std() + eps
@@ -139,46 +86,28 @@ def sharpe_approx_loss(
 
 
 def gate_entropy_regulariser(alpha: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
-    """
-    Negative binary entropy of the gate values in a mini-batch.
-    Minimising this = maximising entropy = forcing alpha to VARY.
-
-    H(alpha) = -mean( α log α + (1-α) log(1-α) )
-    L_gate   = -H(alpha)
-
-    Args:
-        alpha: (B, 1) gate values in (0, 1)
-    """
+    
     a   = alpha.clamp(eps, 1.0 - eps).squeeze(-1)   # (B,)
     ent = -(a * a.log() + (1 - a) * (1 - a).log())  # (B,) — per-sample entropy
     return -ent.mean()                               # negative = loss to minimise
 
 
-# ─────────────────────────────────────────────────────────
-# SUPERVISED PRE-TRAINING  (FIXED)
-# ─────────────────────────────────────────────────────────
+# Supervised Pre Training
 
 def pretrain_fusion_module(
     fusion_model:    nn.Module,
     stacked_actions: np.ndarray,   # (T, 3, N)
     gt_weights:      np.ndarray,   # (T, N)
-    next_returns:    np.ndarray,   # (T, N)  ← NEW required argument
+    next_returns:    np.ndarray,   # (T, N) 
     config:          dict = FUSION_CONFIG,
     save_name:       str  = "fusion_pretrained",
     lambda_mse:      float = 1.0,
     lambda_sharpe:   float = 0.3,
     lambda_gate:     float = 0.1,
 ) -> nn.Module:
-    """
-    Three-component loss pre-training.
-
-    Args:
-        lambda_mse:    weight on MSE loss
-        lambda_sharpe: weight on Sharpe approximation loss
-        lambda_gate:   weight on gate entropy regulariser
-    """
+   
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"\n🏋️  Pre-training Fusion Module (Fixed Supervised Training)")
+    print(f"\n  Pre-training Fusion Module (Fixed Supervised Training)")
     print(f"   Device:        {device}")
     print(f"   Input shape:   (batch, 3, {stacked_actions.shape[2]})")
     print(f"   Epochs:        {config['epochs']}")
@@ -187,7 +116,7 @@ def pretrain_fusion_module(
 
     fusion_model = fusion_model.to(device)
 
-    # Dataset + loaders
+    # Dataset and loaders
     dataset = FusionDataset(stacked_actions, gt_weights, next_returns)
     n_train = int(0.9 * len(dataset))
     n_val   = len(dataset) - n_train
@@ -218,7 +147,7 @@ def pretrain_fusion_module(
 
     for epoch in range(1, config["epochs"] + 1):
 
-        # ── Train
+        # Train
         fusion_model.train()
         train_loss  = 0.0
         epoch_alpha = []
@@ -259,7 +188,7 @@ def pretrain_fusion_module(
         alpha_std  = all_alphas.std().item()
         alpha_history.append((alpha_mean, alpha_std))
 
-        # ── Validate
+        # Validate
         fusion_model.eval()
         val_loss = 0.0
         with torch.no_grad():
@@ -295,15 +224,15 @@ def pretrain_fusion_module(
         "alpha_history":    alpha_history,
         "config":           config,
     }, save_path)
-    print(f"\n  💾 Best model saved to {save_path}")
-    print(f"  ✅ Best validation loss: {best_val:.6f}")
+    print(f"\n Best model saved to {save_path}")
+    print(f" Best validation loss: {best_val:.6f}")
 
     # Check gate is no longer frozen
     final_alpha_std = alpha_history[-1][1]
     if final_alpha_std < 0.01:
-        print("  ⚠️  WARNING: gate_alpha std still low — consider increasing lambda_gate")
+        print(" WARNING: gate_alpha std still low, consider increasing lambda_gate")
     else:
-        print(f"  ✅ Gate is dynamic: final α std = {final_alpha_std:.4f} (> 0.01 = healthy)")
+        print(f" Gate is dynamic: final α std = {final_alpha_std:.4f} (> 0.01 = healthy)")
 
     _plot_training_curve(train_losses, val_losses, alpha_history, save_name)
     return fusion_model
@@ -345,17 +274,14 @@ def _plot_training_curve(train_losses, val_losses, alpha_history, name):
     path = os.path.join(MODEL_DIR, f"{name}_training_curve.png")
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"  📊 Training curve (with gate evolution) saved: {path}")
+    print(f" Training curve (with gate evolution) saved: {path}")
 
 
-# ─────────────────────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────────────────────
+# Main
 
 def main():
-    """Run fixed supervised pre-training pipeline."""
 
-    print("📂 Loading data...")
+    print(" Loading data...")
     close_df = pd.read_csv(
         os.path.join(FEAT_DIR, "aligned_close.csv"), index_col=0, parse_dates=True
     )
@@ -367,7 +293,7 @@ def main():
     print(f"  Assets: {n_assets}")
 
     # Ground truth weights (train period only)
-    print("\n🎯 Computing ground truth weights...")
+    print("\n Computing ground truth weights...")
     train_close = close_df[close_df.index <= TRAIN_END]
     gt_weights  = compute_ground_truth_weights(train_close, c=GT_CONSTANT_C)
 
@@ -377,7 +303,7 @@ def main():
     next_returns = pct_change.shift(-1).fillna(0)   # (T, N)
 
     # Stacked agent actions (train set)
-    print("\n📋 Loading agent actions...")
+    print("\n Loading agent actions...")
     actions_path    = os.path.join(FEAT_DIR, "agent_actions_train")
     stacked_actions = np.load(os.path.join(actions_path, "stacked_actions.npy"))
     action_dates    = pd.read_csv(
@@ -407,10 +333,10 @@ def main():
             n_agents=3,
             **FUSION_CONFIG
         )
-        print("\n✅ Using Fixed Transformer Fusion Module")
+        print("\n Using Fixed Transformer Fusion Module")
         save_name = "transformer_fusion_pretrained"
     except ImportError:
-        print("\n❌ TransformerFusionModule not found — check transformer_fusion.py")
+        print("\n TransformerFusionModule not found — check transformer_fusion.py")
         return
 
     # Pre-train with fixed three-component loss
@@ -428,8 +354,8 @@ def main():
 
     # Save GT weights
     gt_weights.to_csv(os.path.join(FEAT_DIR, "ground_truth_weights.csv"))
-    print(f"\n💾 Ground truth weights saved.")
-    print("\n🎉 Fixed supervised pre-training complete!")
+    print(f"\n Ground truth weights saved.")
+    print("\n Fixed supervised pre-training complete!")
     print("   Next step: run backtest.py")
 
 
