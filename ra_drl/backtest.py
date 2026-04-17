@@ -1,21 +1,19 @@
 """
-backtest.py
-────────────
-Full backtesting pipeline for RA-DRL.
+This is full backtesting pipeline for RA-DRL.
 
-WHAT THIS DOES:
-  1. Load trained PPO agents (log_return, dsr, mdd)
-  2. Load trained Transformer fusion module
-  3. Run ALL agents on TEST data (2021-01-01 to 2024-03-31)
+This code does : 
+  1. Loads trained PPO agents (log_return, dsr, mdd)
+  2. Loads trained Transformer fusion module
+  3. Run all agents on test data (2021-01-01 to 2024-03-31)
   4. Get fusion module's final portfolio weights for each day
   5. Simulate trading with 0.05% transaction cost
   6. Run benchmark strategies (MVO, 1/N, Market Index)
   7. Compute all 8 metrics for every strategy
-  8. Print results table + generate plots
-  9. Run paired t-test for statistical significance
-  10. Save all results to results/
+  8. Prints results table and generate plots
+  9. Runs paired t-test for statistical significance
+  10. Saves all results to results/
 
-RUN: python backtest.py
+To RUN do: python backtest.py
 """
 
 import os
@@ -57,27 +55,26 @@ def load_all_agents(state_df, close_df, tickers):
         agent = PPOPortfolioAgent(rt, env)
         agent.load()
         agents[rt] = agent
-        print(f"  ✅ Loaded agent: {rt}")
+        print(f"Successfully Loaded agent: {rt}")
 
     return agents
 
 
 def generate_test_actions(agents, state_df, close_df):
     """
-    Run all trained agents on the TEST set and collect their daily weight decisions.
-
+    Run all trained agents on the test set and collect their daily weight decisions.
     Returns:
-        stacked: (T, 3, N) numpy array — T days, 3 agents, N assets
+        stacked: (T, 3, N) numpy array —> T days, 3 agents, N assets
         dates:   list of T dates
     """
-    print("\n📋 Generating test period agent actions...")
+    print("\n Generating test period agent actions...")
 
-    # Check if already saved
+    # Checking if already saved
     save_path = os.path.join(FEAT_DIR, "agent_actions_test", "stacked_actions.npy")
     dates_path = os.path.join(FEAT_DIR, "agent_actions_test", "dates.csv")
 
     if os.path.exists(save_path):
-        print("  ⏩ Loading pre-saved test actions...")
+        print(" Loading pre-saved test actions...")
         stacked = np.load(save_path)
         dates   = pd.read_csv(dates_path, parse_dates=["date"])["date"].tolist()
         print(f"  Shape: {stacked.shape}")
@@ -109,7 +106,7 @@ def generate_test_actions(agents, state_df, close_df):
             step += 1
 
         actions_per_agent[reward_type] = np.array(agent_actions)   # (T, N)
-        print(f"  ✅ {reward_type}: {actions_per_agent[reward_type].shape}")
+        print(f" {reward_type}: {actions_per_agent[reward_type].shape}")
 
     # Stack: (T, 3, N)
     agent_order = ["log_return", "dsr", "mdd"]
@@ -122,29 +119,30 @@ def generate_test_actions(agents, state_df, close_df):
     np.save(save_path, stacked)
     pd.Series(dates, name="date").to_csv(dates_path, index=False)
 
-    print(f"\n  📦 Stacked actions: {stacked.shape} (T, 3 agents, N assets)")
+    print(f"\n Stacked actions: {stacked.shape} (T, 3 agents, N assets)")
     return stacked, dates
 
 
 def run_fusion_inference(stacked_actions, dates, tickers, n_assets):
     """
     Run Market-Predictive Transformer on test set agent actions.
-    Also saves diagnostic info: gate_alpha, disagreement patterns.
+    Also saves diagnostic info which is: gate_alpha, disagreement patterns.
     """
-    print("\n🔀 Running Market-Predictive Transformer Fusion...")
+    print("\n Running Market-Predictive Transformer Fusion...")
 
     ckpt_path = os.path.join(MODEL_DIR, "transformer_fusion_pretrained.pt")
     if not os.path.exists(ckpt_path):
         ckpt_path = os.path.join(MODEL_DIR, "cnn_fusion_pretrained.pt")
 
     if not os.path.exists(ckpt_path):
-        print("  ❌ No fusion model found! Run fusion/supervised_pretraining.py first.")
+        print(" No fusion model found! Run fusion/supervised_pretraining.py first.")
         N = n_assets
         weights = np.tile(np.ones(N) / N, (len(dates), 1))
         return pd.DataFrame(weights, index=dates, columns=tickers)
 
     # Load model
     checkpoint = torch.load(ckpt_path, map_location="cpu")
+  
     # Local import to ensure the class is available
     from fusion.transformer_fusion import TransformerFusionModule, FusionInference
     
@@ -152,7 +150,7 @@ def run_fusion_inference(stacked_actions, dates, tickers, n_assets):
     model.load_state_dict(checkpoint["model_state_dict"])
     fusion = FusionInference(model)
 
-    # Get weights + diagnostics for every date
+    # Getting weights and diagnostics for every date
     print(f"  Running inference on {len(dates)} test dates...")
     weights_list    = []
     gate_alphas     = []
@@ -181,20 +179,20 @@ def run_fusion_inference(stacked_actions, dates, tickers, n_assets):
             d_norm = np.linalg.norm(diag["disagree_emb"], axis=-1)
             disagree_norms.extend(d_norm.flatten())
 
-    # Concatenate all batches into one (T, N) matrix
+    # Concatenating all batches into one (T, N) matrix
     weights = np.concatenate(weights_list, axis=0)
     weights_df = pd.DataFrame(weights, index=dates, columns=tickers)
 
-    # Calculate means safely
+    # Calculate the means safely
     avg_alpha = np.mean(gate_alphas) if gate_alphas else 1.0
     avg_disagree = np.mean(disagree_norms) if disagree_norms else 0.0
 
-    print(f"  ✅ Fusion complete")
+    print(f" Fusion complete")
     print(f"      Learned gate α = {avg_alpha:.4f}  "
           f"→ {avg_alpha*100:.1f}% Transformer, {(1-avg_alpha)*100:.1f}% agent blend")
     print(f"      Weight sum check (should be ~1): {weights_df.sum(axis=1).mean():.6f}")
 
-    # Save diagnostics
+    # Saving diagnostics
     diag_df = pd.DataFrame({
         "date":          dates,
         "gate_alpha":    avg_alpha,
@@ -208,9 +206,9 @@ def run_fusion_inference(stacked_actions, dates, tickers, n_assets):
 def run_base_agent_portfolios(agents, state_df, close_df, tickers):
     """
     Simulate portfolio performance of each individual PPO agent.
-    Used for comparison in results table.
+    This is used for comparison in results table.
     """
-    print("\n🤖 Simulating base agent portfolios...")
+    print("\n Simulating base agent portfolios...")
 
     test_close = close_df[close_df.index >= TEST_START]
     agent_portfolios = {}
@@ -248,39 +246,39 @@ def run_base_agent_portfolios(agents, state_df, close_df, tickers):
         )
         portfolio.name = f"PPO-{reward_type}"
         agent_portfolios[reward_type] = portfolio
-        print(f"  ✅ {reward_type}: final ${portfolio.iloc[-1]:,.0f}")
+        print(f" {reward_type}: final ${portfolio.iloc[-1]:,.0f}")
 
     return agent_portfolios
 
 
 def run_backtest():
-    """MASTER BACKTEST FUNCTION — runs everything."""
+    """Master Backtest Function -> This runs everything"""
 
     print("=" * 70)
     print("  RA-DRL FULL BACKTEST")
-    print(f"  Test period: {TEST_START} → {TEST_END}")
+    print(f" The test period is: {TEST_START} → {TEST_END}")
     print("=" * 70)
 
-    # ── 1. Load features
-    print("\n📂 Loading features...")
+    # Load features
+    print("\n Loading features...")
     state_df, close_df, cov_array, tickers = load_features()
     n_assets  = len(tickers)
     test_close = close_df[close_df.index >= TEST_START]
     print(f"  Assets: {n_assets}")
     print(f"  Test dates: {test_close.index[0].date()} → {test_close.index[-1].date()}")
 
-    # ── 2. Load trained PPO agents
-    print("\n🤖 Loading PPO agents...")
+    # Load trained PPO agents
+    print("\n Loading PPO agents...")
     agents = load_all_agents(state_df, close_df, tickers)
 
-    # ── 3. Generate test actions for all agents
+    # Generating test actions for all agents
     stacked_actions, action_dates = generate_test_actions(agents, state_df, close_df)
 
-    # ── 4. Fusion inference → RA-DRL weights
+    # Fusion inference → RA-DRL weights
     ra_drl_weights = run_fusion_inference(stacked_actions, action_dates, tickers, n_assets)
 
-    # ── 5. Simulate RA-DRL portfolio
-    print("\n💼 Simulating RA-DRL portfolio...")
+    # Simulating RA-DRL portfolio
+    print("\n Simulating RA-DRL portfolio...")
     ra_drl_portfolio = simulate_portfolio(
         close_df=test_close,
         weights_df=ra_drl_weights,
@@ -288,23 +286,23 @@ def run_backtest():
         transaction_cost=TRANSACTION_COST,
     )
     ra_drl_portfolio.name = "RA-DRL"
-    print(f"  ✅ RA-DRL final value: ${ra_drl_portfolio.iloc[-1]:,.0f}")
+    print(f" RA-DRL final value: ${ra_drl_portfolio.iloc[-1]:,.0f}")
 
-    # ── 6. Run base agent portfolios
+    # Run base agent portfolios
     agent_portfolios = run_base_agent_portfolios(agents, state_df, close_df, tickers)
 
-    # ── 7. Run benchmarks
-    print("\n📊 Running benchmarks...")
+    # Run benchmarks
+    print("\n Running benchmarks...")
     benchmarks = run_all_benchmarks(test_close)
 
-    # ── 8. Combine all strategies
+    # Combine all strategies
     all_strategies = {"RA-DRL": ra_drl_portfolio}
     for rt, p in agent_portfolios.items():
         all_strategies[f"PPO-{rt}"] = p
     all_strategies.update(benchmarks)
 
-    # ── 9. Compute all metrics
-    print("\n📈 Computing performance metrics...")
+    # Computing all metrics
+    print("\n Computing performance metrics...")
     metrics_df = compare_strategies(all_strategies)
 
     print("\n" + "=" * 70)
@@ -312,8 +310,8 @@ def run_backtest():
     print("=" * 70)
     print(metrics_df.to_string())
 
-    # ── 10. Proper statistical significance tests
-    print("\n🧪 Running proper statistical significance tests...")
+    # Proper statistical significance tests
+    print("\n Running proper statistical significance tests...")
     from utils.statistical_tests import run_all_significance_tests
     sig_results = run_all_significance_tests(
         strategies    = all_strategies,
@@ -323,8 +321,8 @@ def run_backtest():
     )
     sig_results.to_csv(os.path.join(RESULT_DIR, "significance_tests.csv"), index=False)
 
-    # ── 11. Save results
-    print(f"\n💾 Saving results to {RESULT_DIR}/")
+    # Save results
+    print(f"\n Saving the results to {RESULT_DIR}/")
     metrics_df.to_csv(os.path.join(RESULT_DIR, "metrics_comparison.csv"))
 
     portfolio_df = pd.DataFrame({k: v for k, v in all_strategies.items() if v is not None})
@@ -332,12 +330,12 @@ def run_backtest():
 
     ra_drl_weights.to_csv(os.path.join(RESULT_DIR, "ra_drl_weights.csv"))
 
-    # ── 12. Generate plots
-    print("\n📊 Generating visualization plots...")
+    # Generating plots
+    print("\n Generating visualization plots...")
     plot_all(all_strategies, metrics_df)
 
     print("\n" + "=" * 70)
-    print("  BACKTEST COMPLETE!")
+    print(" SUCCESSFULLY COMPLETED BACKTEST!")
     print(f"  Results saved to: {RESULT_DIR}/")
     print("=" * 70)
 
