@@ -1,5 +1,5 @@
 # FusionRL-X
-**Risk-Adjusted Deep Reinforcement Learning for Portfolio Optimization
+Risk-Adjusted Deep Reinforcement Learning for Portfolio Optimization
 
 Multi-Reward Fusion with Transformer-Based Decision Aggregation
 
@@ -48,7 +48,7 @@ This approach aims to bridge the gap between theoretical portfolio optimization 
 
 ---
 
-## 📊 Workflow
+##  Workflow
 
 ![Workflow Diagram](RA_DRL_workflow.jpeg)
 
