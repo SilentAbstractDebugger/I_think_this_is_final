@@ -54,38 +54,45 @@ This approach aims to bridge the gap between theoretical portfolio optimization 
 
 ---
 
-## Project Structure
+##  Project Structure
 
 ```
-ra_drl/
+├── ra_drl/                            # Core source code
+│   ├── agents/                        # RL agents and pipelines
+│   │   ├── ppo_agent.py                PPO trading agent implementation
+│   │   ├── train_agents.py             Training loop for agents
+│   │   └── evaluate_agents.py          Evaluation of trained agents
+│   │
+│   ├── benchmarks/                    # Baseline strategies for comparison
+│   │   └── baselines.py
+│   │
+│   ├── data/                          # Data acquisition & preprocessing
+│   │   ├── download_data.py            Fetches raw market data
+│   │   └── feature_engineering.py      Generates model-ready features
+│   │
+│   ├── envs/                          # Custom RL environments
+│   │   └── portfolio_env.py            Portfolio optimization environment
+│   │
+│   ├── fusion/                        # Hybrid learning modules
+│   │   ├── supervised_pretraining.py   Supervised learning pretraining
+│   │   └── transformer_fusion.py       Transformer-based feature fusion
+│   │
+│   ├── models/                        # Saved model checkpoints (auto-generated)
+│   ├── results/                       # Logs, metrics, visualizations (auto-generated)
+│   │
+│   ├── utils/                         # Helper utilities
+│   │   ├── rewards.py                  Custom reward functions
+│   │   ├── metrics.py                  Performance evaluation metrics
+│   │   ├── visualization.py            Plotting and visualization tools
+│   │   └── statistical_testing.py      Statistical significance testing
+│   │
+│   ├── backtest.py                    # Backtesting script for trained models
+│   ├── config.py                      # Central configuration (hyperparameters, paths)
+│   └── train.py                       # Main training entry point
 │
-├-- data/
-│   ├-- download_data.py
-│   └-- feature_engineering.py
-│
-├-- envs/
-│   └-- portfolio_env.py
-│
-├-- agents/
-│   ├-- ppo_agent.py
-│   └-- train_agents.py
-│
-├-- fusion/
-│   ├-- supervised_pretraining.py
-│   └-- transformer_fusion.py  
-│
-├-- utils/
-│   ├-- rewards.py
-│   ├-- metrics.py
-│   └-- visualization.py
-│
-├-- benchmarks/
-│   └-- baselines.py
-│
-├-- config.py
-├-- train.py
-├-- backtest.py
-requirements.txt
+├── README.md                          # Project documentation
+├── requirements.txt                   # Python dependencies
+└── .gitignore                         # Git ignore rules
 ```
 
 ---
@@ -143,6 +150,45 @@ requirements.txt
 
 ---
    
+##  Training Details
+
+- **Transaction Cost:** 0.05% per trade  
+- **Train/Test Split:** Time-based split to preserve temporal dependencies  
+- **Hyperparameter Optimization:** Bayesian Optimization using Hyperopt
+  
+---
+
+## Expected Outcomes
+
+- Robust portfolio performance with enhanced risk-adjusted returns  
+- Reduced drawdowns compared to single-objective reinforcement learning approaches  
+- Consistent performance across different market regimes:
+  - Bull markets  
+  - Bear markets  
+  - Sideways markets
+ 
+--- 
+
+## Requirements
+
+- **Python:** 3.10+  
+- **GPU (recommended):** CUDA-capable GPU (≥ 4 GB VRAM)  
+- **RAM:** 8 GB minimum (16 GB recommended for smoother training)  
+- **Disk Space:**  
+  - ~4 GB for dataset storage  
+  - Additional space for model checkpoints and results  
+
+### Notes
+- The project can run on CPU, but training will be significantly slower  
+- If you face memory issues:
+  - Reduce batch size or training steps in `config.py`  
+  - Limit number of assets or time window in dataset  
+- Compatible with:
+  - Google Colab (T4 runtime recommended)  
+  - Local GPU setups  
+
+---
+
 ## How to Run
 
 Run everything from project root.
@@ -183,47 +229,10 @@ Run everything from project root.
 ```
 
 ---
-
-##  Training Details
-
-- **Transaction Cost:** 0.05% per trade  
-- **Train/Test Split:** Time-based split to preserve temporal dependencies  
-- **Hyperparameter Optimization:** Bayesian Optimization using Hyperopt
-  
----
-
-## Contributors
-- Diksha Agrawal
-- Aastha Sharma
-- Gaurav Kumar
-
----
-
-## Expected Outcomes
-
-- Robust portfolio performance with enhanced risk-adjusted returns  
-- Reduced drawdowns compared to single-objective reinforcement learning approaches  
-- Consistent performance across different market regimes:
-  - Bull markets  
-  - Bear markets  
-  - Sideways markets
- 
---- 
       
-# References
- 1. Risk-Adjusted Deep Reinforcement Learning for Portfolio Optimization: A Multi-reward Approach (2025)
- 2. Deep Reinforcement Learning for Portfolio Selection
-
----
-
-## Results 
-
-| Model            | Sharpe Ratio | Return | Max Drawdown |
-|------------------|-------------|--------|--------------|
-| RA-DRL (Ours)    | TBD         | TBD    | TBD          |
-| PPO (Single)     | TBD         | TBD    | TBD          |
-| MVO              | TBD         | TBD    | TBD          |
-| Equal Weight (1/N) | TBD       | TBD    | TBD          |
+## References
+ 1. [Risk-Adjusted Deep Reinforcement Learning for Portfolio Optimization: A Multi-reward Approach (2025)](https://link.springer.com/article/10.1007/s44196-025-00875-8)
+ 2. [Deep Reinforcement Learning for Portfolio Selection](https://www.sciencedirect.com/science/article/pii/S1044028324000887)
 
 ---
 
@@ -232,6 +241,13 @@ Run everything from project root.
 - This model can be extended to multiple markets (e.g., Sensex, NASDAQ)  
 - This enables real time trading and deployment  
 - Incorporation of risk-aware transformer architectures with attention constraints  
+
+---
+
+## Contributors
+- [Diksha Agrawal](https://github.com/SilentAbstractDebugger)
+- [Aastha Sharma](https://github.com/Aastha0107)
+- [Gaurav Kumar](https://github.com/sekiroQ-Q)
 
 ---
 
